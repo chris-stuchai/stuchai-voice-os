@@ -33,10 +33,11 @@ async def get_my_client(
     if not current_user.client_id:
         raise HTTPException(status_code=404, detail="User has no associated client")
     
+    from sqlalchemy import select
     result = await db.execute(
-        f"SELECT * FROM clients WHERE id = {current_user.client_id}"
+        select(Client).where(Client.id == current_user.client_id)
     )
-    client = result.fetchone()
+    client = result.scalar_one_or_none()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     return client
@@ -60,9 +61,14 @@ async def get_client_agents(
     if not current_user.client_id:
         raise HTTPException(status_code=404, detail="User has no associated client")
     
+    from sqlalchemy import select
+    from server.models.schemas import Agent
     result = await db.execute(
-        f"SELECT * FROM agents WHERE client_id = {current_user.client_id} AND is_active = true"
+        select(Agent).where(
+            Agent.client_id == current_user.client_id,
+            Agent.is_active == True
+        )
     )
-    agents = result.fetchall()
+    agents = result.scalars().all()
     return agents
 

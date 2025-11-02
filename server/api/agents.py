@@ -84,14 +84,15 @@ async def list_agents(
     Returns:
         List[AgentResponse]: List of agents
     """
+    from sqlalchemy import select
     if client_id:
         result = await db.execute(
-            f"SELECT * FROM agents WHERE client_id = {client_id}"
+            select(Agent).where(Agent.client_id == client_id)
         )
     else:
-        result = await db.execute("SELECT * FROM agents")
+        result = await db.execute(select(Agent))
     
-    agents = result.fetchall()
+    agents = result.scalars().all()
     return agents
 
 
@@ -112,10 +113,11 @@ async def get_agent(
     Returns:
         AgentResponse: Agent data
     """
+    from sqlalchemy import select
     result = await db.execute(
-        f"SELECT * FROM agents WHERE id = {agent_id}"
+        select(Agent).where(Agent.id == agent_id)
     )
-    agent = result.fetchone()
+    agent = result.scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     return agent
@@ -139,10 +141,11 @@ async def start_conversation(
         ConversationResponse: Created conversation
     """
     # Verify agent exists
+    from sqlalchemy import select
     result = await db.execute(
-        f"SELECT * FROM agents WHERE id = {agent_id}"
+        select(Agent).where(Agent.id == agent_id)
     )
-    agent = result.fetchone()
+    agent = result.scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
@@ -252,9 +255,10 @@ async def list_conversations(
     Returns:
         List[ConversationResponse]: List of conversations
     """
+    from sqlalchemy import select
     result = await db.execute(
-        f"SELECT * FROM conversations WHERE agent_id = {agent_id} ORDER BY started_at DESC"
+        select(Conversation).where(Conversation.agent_id == agent_id).order_by(Conversation.started_at.desc())
     )
-    conversations = result.fetchall()
+    conversations = result.scalars().all()
     return conversations
 
