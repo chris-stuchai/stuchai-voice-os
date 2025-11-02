@@ -15,7 +15,8 @@ from server.models.schemas import Message, MessageRole, Conversation
 logger = logging.getLogger(__name__)
 
 # Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Using bcrypt_sha256 to avoid bcrypt's 72-byte limit
+pwd_context = CryptContext(schemes=["bcrypt_sha256", "bcrypt"], deprecated="auto")
 
 
 def get_password_hash(password: str) -> str:
