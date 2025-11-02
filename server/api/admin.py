@@ -305,3 +305,138 @@ async def get_stats(
         "total_conversations": conversations_result.scalar() or 0,
     }
 
+
+@router.post("/seed-database")
+async def seed_database(
+    current_user: User = Depends(admin_only),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Seed database with default data (admin only).
+    
+    Creates:
+    - 3 default voices (Stella, Rachel, Marcus)
+    - Sample client with agent
+    
+    Args:
+        current_user: Current authenticated admin user
+        db: Database session
+        
+    Returns:
+        dict: Seeding results
+    """
+    from server.models.schemas import Voice, Agent
+    from sqlalchemy import select
+    
+    results = {"voices": [], "client": None, "agent": None}
+    
+    # Seed voices
+    voice_result = await db.execute(select(Voice))
+    existing_voices = voice_result.scalars().all()
+    
+    if not existing_voices:
+        voices_data = [
+            {
+                "name": "Stella",
+                "description": "Calm, intelligent, executive property assistant voice. Professional and solution-oriented.",
+                "provider": "coqui",
+                "voice_id": "ljspeech",
+                "language": "en",
+                "gender": "female",
+                "sample_rate": 22050,
+                "speed": 1.0,
+                "pitch": 1.0,
+                "is_active": True
+            },
+            {
+                "name": "Rachel",
+                "description": "Clear, articulate female voice. Perfect for professional communications.",
+                "provider": "coqui",
+                "voice_id": "tts_models/en/ljspeech/tacotron2-DDC",
+                "language": "en",
+                "gender": "female",
+                "sample_rate": 22050,
+                "speed": 1.0,
+                "pitch": 1.0,
+                "is_active": True
+            },
+            {
+                "name": "Marcus",
+                "description": "Confident, authoritative male voice. Ideal for executive communications.",
+                "provider": "coqui",
+                "voice_id": "tts_models/en/vctk/vits",
+                "language": "en",
+                "gender": "male",
+                "sample_rate": 22050,
+                "speed": 1.0,
+                "pitch": 1.0,
+                "is_active": True
+            }
+        ]
+        
+        for voice_data in voices_data:
+            voice = Voice(**voice_data)
+            db.add(voice)
+            results["voices"].append(voice_data["name"])
+        
+        await db.commit()
+    else:
+        results["voices"] = [v.name for v in existing_voices]
+        results["message"] = "Voices already exist"
+    
+    # Seed sample client
+    client_result = await db.execute(
+        select(Client).where(Client.name == "Demo Property Management")
+    )
+    existing_client = client_result.scalar_one_or_none()
+    
+    if not existing_client:
+        client = Client(
+            name="Demo Property Management",
+            domain="demo.stuchai.com",
+            subdomain="demo",
+            settings={
+                "industry": "property_management",
+                "timezone": "America/New_York"
+            },
+            is_active=True
+        )
+        db.add(client)
+        await db.commit()
+        await db.refresh(client)
+        results["client"] = client.name
+        
+        # Create agent for this client
+        voice_result = await db.execute(select(Voice).where(Voice.name == "Stella"))
+        stella_voice = voice_result.scalar_one_or_none()
+        
+        if stella_voice:
+            agent = Agent(
+                client_id=client.id,
+                name="Stella Assistant",
+                voice_id=stella_voice.id,
+                llm_provider="openai",
+                llm_model="gpt-4o",
+                llm_temperature=0.7,
+                llm_max_tokens=2000,
+                persona_prompt="You are Stella, a calm, intelligent, executive property assistant.",
+                system_message="""You are Stella, a calm, intelligent, executive property assistant. 
+You speak clearly, take action fast, and sound like a human operations manager.
+Your tone is professional, concise, reassuring, and solution-oriented.
+Always be helpful, efficient, and focused on solving problems.""",
+                mcp_enabled=True,
+                is_active=True
+            )
+            db.add(agent)
+            await db.commit()
+            await db.refresh(agent)
+            results["agent"] = agent.name
+    else:
+        results["client"] = existing_client.name
+        results["message"] = "Client already exists"
+    
+    return {
+        "success": True,
+        "results": results
+    }
+
