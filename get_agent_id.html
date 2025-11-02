@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Get Your Agent ID</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 { color: #333; margin-bottom: 10px; }
+        .step { margin: 20px 0; padding: 15px; background: #f8f9fa; border-left: 4px solid #667eea; }
+        .step h3 { margin-top: 0; color: #667eea; }
+        input, button {
+            padding: 10px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            cursor: pointer;
+            padding: 10px 20px;
+        }
+        button:hover { background: #5568d3; }
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            background: #e7f3ff;
+            border-radius: 5px;
+            display: none;
+        }
+        .result.show { display: block; }
+        .result.success { background: #d4edda; border-left: 4px solid #28a745; }
+        .result.error { background: #f8d7da; border-left: 4px solid #dc3545; }
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        .big-number {
+            font-size: 48px;
+            font-weight: bold;
+            color: #667eea;
+            text-align: center;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🔍 Get Your Agent ID</h1>
+        <p>This tool helps you find or create your agent ID.</p>
+        
+        <div class="step">
+            <h3>Step 1: Login</h3>
+            <input type="text" id="username" placeholder="Email (admin@stuchai.com)" value="admin@stuchai.com">
+            <input type="password" id="password" placeholder="Password" value="SecurePass123!">
+            <button onclick="login()">Login</button>
+            <div id="loginResult" class="result"></div>
+        </div>
+        
+        <div class="step">
+            <h3>Step 2: Seed Database (First Time Only)</h3>
+            <button onclick="seedDatabase()">Seed Database</button>
+            <div id="seedResult" class="result"></div>
+        </div>
+        
+        <div class="step">
+            <h3>Step 3: List Your Agents</h3>
+            <button onclick="listAgents()">Show All Agents</button>
+            <div id="agentsResult" class="result"></div>
+        </div>
+        
+        <div class="step">
+            <h3>Step 4: Create New Agent (If Needed)</h3>
+            <input type="number" id="clientId" placeholder="Client ID">
+            <input type="text" id="agentName" placeholder="Agent Name (e.g., Stella Assistant)">
+            <input type="number" id="voiceId" placeholder="Voice ID (1=Stella, 2=Rachel, 3=Marcus)" value="1">
+            <button onclick="createAgent()">Create Agent</button>
+            <div id="createResult" class="result"></div>
+        </div>
+        
+        <div class="step">
+            <h3>Step 5: Your Agent ID</h3>
+            <div id="agentIdDisplay" class="big-number">-</div>
+            <p style="text-align: center; color: #666;">
+                Copy this number and use it in the voice test page!
+            </p>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'https://stuchai-voice-os-production.up.railway.app/api/v1';
+        let token = '';
+        
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const resultDiv = document.getElementById('loginResult');
+            
+            resultDiv.textContent = 'Logging in...';
+            resultDiv.className = 'result show';
+            
+            try {
+                const response = await fetch(`${API_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.access_token) {
+                    token = data.access_token;
+                    resultDiv.textContent = '✅ Login successful!';
+                    resultDiv.className = 'result show success';
+                } else {
+                    throw new Error(data.detail || 'Login failed');
+                }
+            } catch (error) {
+                resultDiv.textContent = `❌ Error: ${error.message}`;
+                resultDiv.className = 'result show error';
+            }
+        }
+        
+        async function seedDatabase() {
+            if (!token) {
+                alert('Please login first!');
+                return;
+            }
+            
+            const resultDiv = document.getElementById('seedResult');
+            resultDiv.textContent = 'Seeding database...';
+            resultDiv.className = 'result show';
+            
+            try {
+                const response = await fetch(`${API_URL}/admin/seed-database`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                const data = await response.json();
+                resultDiv.textContent = '✅ ' + JSON.stringify(data, null, 2);
+                resultDiv.className = 'result show success';
+            } catch (error) {
+                resultDiv.textContent = `❌ Error: ${error.message}`;
+                resultDiv.className = 'result show error';
+            }
+        }
+        
+        async function listAgents() {
+            if (!token) {
+                alert('Please login first!');
+                return;
+            }
+            
+            const resultDiv = document.getElementById('agentsResult');
+            resultDiv.textContent = 'Loading agents...';
+            resultDiv.className = 'result show';
+            
+            try {
+                const response = await fetch(`${API_URL}/agents`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                const data = await response.json();
+                
+                if (data.length === 0) {
+                    resultDiv.innerHTML = 'No agents found. Create one below!';
+                    resultDiv.className = 'result show';
+                } else {
+                    let html = '<strong>Your Agents:</strong><br><br>';
+                    data.forEach(agent => {
+                        html += `<div style="margin: 10px 0; padding: 10px; background: white; border-radius: 5px;">
+                            <strong>ID: ${agent.id}</strong> - ${agent.name}<br>
+                            <small>Client ID: ${agent.client_id} | Voice ID: ${agent.voice_id || 'None'}</small>
+                        </div>`;
+                    });
+                    resultDiv.innerHTML = html;
+                    resultDiv.className = 'result show success';
+                    
+                    // Auto-set the first agent ID
+                    if (data[0]) {
+                        document.getElementById('agentIdDisplay').textContent = data[0].id;
+                    }
+                }
+            } catch (error) {
+                resultDiv.textContent = `❌ Error: ${error.message}`;
+                resultDiv.className = 'result show error';
+            }
+        }
+        
+        async function createAgent() {
+            if (!token) {
+                alert('Please login first!');
+                return;
+            }
+            
+            const clientId = document.getElementById('clientId').value;
+            const agentName = document.getElementById('agentName').value;
+            const voiceId = document.getElementById('voiceId').value;
+            
+            if (!clientId || !agentName) {
+                alert('Please fill in Client ID and Agent Name!');
+                return;
+            }
+            
+            const resultDiv = document.getElementById('createResult');
+            resultDiv.textContent = 'Creating agent...';
+            resultDiv.className = 'result show';
+            
+            try {
+                const response = await fetch(`${API_URL}/agents`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        client_id: parseInt(clientId),
+                        name: agentName,
+                        voice_id: voiceId ? parseInt(voiceId) : 1,
+                        llm_provider: 'openai',
+                        llm_model: 'gpt-4o',
+                        mcp_enabled: true
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.id) {
+                    resultDiv.textContent = `✅ Agent created! ID: ${data.id}`;
+                    resultDiv.className = 'result show success';
+                    document.getElementById('agentIdDisplay').textContent = data.id;
+                } else {
+                    throw new Error(JSON.stringify(data));
+                }
+            } catch (error) {
+                resultDiv.textContent = `❌ Error: ${error.message}`;
+                resultDiv.className = 'result show error';
+            }
+        }
+        
+        // Auto-login on page load
+        window.onload = () => {
+            setTimeout(login, 500);
+        };
+    </script>
+</body>
+</html>
+
