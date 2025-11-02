@@ -41,7 +41,3 @@ email-validator==2.1.0
 
 # Logging
 structlog==23.2.0
-
-# CORS
-python-cors==1.0.0
-
