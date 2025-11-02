@@ -51,11 +51,13 @@ class VoicePipeline:
         """
         # Load agent from database
         from server.models.database import AsyncSessionLocal
+        from sqlalchemy import select
+        
         async with AsyncSessionLocal() as db:
             result = await db.execute(
-                f"SELECT * FROM agents WHERE id = {self.agent_id}"
+                select(Agent).where(Agent.id == self.agent_id)
             )
-            self.agent = result.fetchone()
+            self.agent = result.scalar_one_or_none()
             
             if not self.agent:
                 raise ValueError(f"Agent {self.agent_id} not found")
@@ -64,7 +66,7 @@ class VoicePipeline:
         self.asr_engine = get_asr_engine()
         
         # Initialize TTS engine with agent's voice
-        voice_id = self.agent.voice_id if hasattr(self.agent, 'voice_id') else None
+        voice_id = self.agent.voice_id if self.agent.voice_id else None
         self.tts_engine = get_tts_engine(voice_id=voice_id)
         
         # Initialize LLM router
@@ -105,7 +107,8 @@ class VoicePipeline:
             response_text = await self.llm_router.generate_response(
                 user_text,
                 agent_id=self.agent_id,
-                session_id=self.session_id
+                session_id=self.session_id,
+                mcp_enabled=self.agent.mcp_enabled if hasattr(self.agent, 'mcp_enabled') else False
             )
             
             if not response_text:
@@ -116,7 +119,7 @@ class VoicePipeline:
             logger.debug(f"Converting response to speech: {response_text}")
             response_audio = await self.tts_engine.synthesize(
                 response_text,
-                voice_id=self.agent.voice_id if hasattr(self.agent, 'voice_id') else None
+                voice_id=self.agent.voice_id if self.agent.voice_id else None
             )
             
             # Save assistant message to database
@@ -147,12 +150,15 @@ class VoicePipeline:
         
         try:
             from server.models.database import AsyncSessionLocal
+            from sqlalchemy import select
+            from server.models.schemas import Conversation
+            
             async with AsyncSessionLocal() as db:
                 # Find conversation by session_id
                 result = await db.execute(
-                    f"SELECT * FROM conversations WHERE session_id = '{self.session_id}'"
+                    select(Conversation).where(Conversation.session_id == self.session_id)
                 )
-                conversation = result.fetchone()
+                conversation = result.scalar_one_or_none()
                 
                 if conversation:
                     # Save audio file if provided

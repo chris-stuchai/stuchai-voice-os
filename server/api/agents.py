@@ -11,12 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 import json
 import uuid
+import logging
 
 from server.models.database import get_db
 from server.models.schemas import Agent, Conversation, ConversationStatus, User
 from server.api.auth import get_current_active_user
 from server.voice.pipeline import VoicePipeline
 from server.agent.llm import LLMRouter
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -176,38 +179,60 @@ async def agent_voice_stream(
     Args:
         websocket: WebSocket connection
         agent_id: Agent ID
-        session_id: Optional session ID for conversation
+        session_id: Optional session ID for conversation (can be passed as query param)
     """
     await websocket.accept()
     
+    # Get session_id from query params if not provided
+    if not session_id:
+        query_params = dict(websocket.query_params)
+        session_id = query_params.get("session_id")
+    
+    pipeline = None
     try:
         # Initialize voice pipeline
-        pipeline = VoicePipeline(agent_id=agent_id)
+        pipeline = VoicePipeline(agent_id=agent_id, session_id=session_id)
         await pipeline.initialize()
         
         # Main loop: receive audio chunks and process
         while True:
-            # Receive audio data
-            data = await websocket.receive_bytes()
-            
-            # Process through pipeline: ASR -> LLM -> TTS
-            response_audio = await pipeline.process_audio(data)
-            
-            # Send response audio back
-            if response_audio:
-                await websocket.send_bytes(response_audio)
+            try:
+                # Receive audio data (can be bytes or JSON)
+                data = await websocket.receive()
+                
+                if "bytes" in data:
+                    audio_bytes = data["bytes"]
+                    # Process through pipeline: ASR -> LLM -> TTS
+                    response_audio = await pipeline.process_audio(audio_bytes)
+                    
+                    # Send response audio back
+                    if response_audio:
+                        await websocket.send_bytes(response_audio)
+                elif "text" in data:
+                    # Handle JSON messages for control
+                    import json
+                    message = json.loads(data["text"])
+                    if message.get("type") == "ping":
+                        await websocket.send_json({"type": "pong"})
     
     except WebSocketDisconnect:
         # Cleanup on disconnect
-        await pipeline.cleanup()
-        pass
+        if pipeline:
+            await pipeline.cleanup()
+        logger.info("WebSocket disconnected")
     except Exception as e:
         # Handle errors
-        await websocket.send_json({
-            "error": str(e),
-            "type": "error"
-        })
-        await websocket.close()
+        logger.error(f"WebSocket error: {e}", exc_info=True)
+        try:
+            await websocket.send_json({
+                "error": str(e),
+                "type": "error"
+            })
+            await websocket.close()
+        except:
+            pass
+        if pipeline:
+            await pipeline.cleanup()
 
 
 @router.get("/{agent_id}/conversations", response_model=List[ConversationResponse])

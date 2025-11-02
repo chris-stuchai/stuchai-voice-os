@@ -8,6 +8,7 @@ import logging
 from typing import Optional, List, Dict
 import httpx
 import openai
+import json
 from openai import AsyncOpenAI
 
 from shared.config import settings
@@ -68,7 +69,8 @@ Always be helpful, efficient, and focused on solving problems."""
         user_message: str,
         agent_id: int,
         session_id: Optional[str] = None,
-        conversation_history: Optional[List[Dict]] = None
+        conversation_history: Optional[List[Dict]] = None,
+        mcp_enabled: bool = True
     ) -> str:
         """
         Generate LLM response to user message.
@@ -78,12 +80,13 @@ Always be helpful, efficient, and focused on solving problems."""
             agent_id: Agent ID for context
             session_id: Session ID for conversation tracking
             conversation_history: Previous messages in conversation
+            mcp_enabled: Whether to enable MCP tool calling
             
         Returns:
             str: LLM response
         """
         if self.provider == "openai":
-            return await self._generate_openai(user_message, conversation_history)
+            return await self._generate_openai(user_message, conversation_history, mcp_enabled)
         elif self.provider == "local":
             return await self._generate_local(user_message, conversation_history)
         else:
@@ -92,14 +95,16 @@ Always be helpful, efficient, and focused on solving problems."""
     async def _generate_openai(
         self,
         user_message: str,
-        conversation_history: Optional[List[Dict]] = None
+        conversation_history: Optional[List[Dict]] = None,
+        mcp_enabled: bool = True
     ) -> str:
         """
-        Generate response using OpenAI API.
+        Generate response using OpenAI API with optional MCP tool calling.
         
         Args:
             user_message: User message
             conversation_history: Previous messages
+            mcp_enabled: Whether to enable MCP tool calling
             
         Returns:
             str: Generated response
@@ -122,15 +127,87 @@ Always be helpful, efficient, and focused on solving problems."""
             "content": user_message
         })
         
+        # Get MCP tools if enabled
+        tools = None
+        if mcp_enabled:
+            try:
+                from server.agent.mcp_client import get_mcp_client
+                mcp_client = get_mcp_client()
+                await mcp_client.initialize()
+                mcp_tools = await mcp_client.list_tools()
+                
+                if mcp_tools:
+                    # Convert MCP tools to OpenAI function format
+                    tools = []
+                    for tool in mcp_tools:
+                        tools.append({
+                            "type": "function",
+                            "function": {
+                                "name": tool.get("name", ""),
+                                "description": tool.get("description", ""),
+                                "parameters": tool.get("parameters", {})
+                            }
+                        })
+            except Exception as e:
+                logger.warning(f"Failed to load MCP tools: {e}")
+                tools = None
+        
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens
-            )
+            kwargs = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens
+            }
             
-            return response.choices[0].message.content
+            if tools:
+                kwargs["tools"] = tools
+                kwargs["tool_choice"] = "auto"
+            
+            response = await self.client.chat.completions.create(**kwargs)
+            
+            message = response.choices[0].message
+            
+            # Handle tool calls
+            if message.tool_calls:
+                # Execute tool calls
+                tool_results = []
+                for tool_call in message.tool_calls:
+                    tool_name = tool_call.function.name
+                    tool_args = json.loads(tool_call.function.arguments)
+                    
+                    try:
+                        from server.agent.mcp_client import get_mcp_client
+                        mcp_client = get_mcp_client()
+                        tool_result = await mcp_client.call_tool(tool_name, tool_args)
+                        tool_results.append({
+                            "tool_call_id": tool_call.id,
+                            "role": "tool",
+                            "name": tool_name,
+                            "content": json.dumps(tool_result)
+                        })
+                    except Exception as e:
+                        logger.error(f"Tool execution error: {e}")
+                        tool_results.append({
+                            "tool_call_id": tool_call.id,
+                            "role": "tool",
+                            "name": tool_name,
+                            "content": json.dumps({"error": str(e)})
+                        })
+                
+                # Add tool results and get final response
+                messages.append(message)
+                messages.extend(tool_results)
+                
+                final_response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens
+                )
+                return final_response.choices[0].message.content
+            
+            return message.content
         
         except Exception as e:
             logger.error(f"OpenAI API error: {e}")
