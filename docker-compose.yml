@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: stuchai_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-stuchai_voice_os}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - stuchai_network
+
+  # Redis Cache (Optional)
+  redis:
+    image: redis:7-alpine
+    container_name: stuchai_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - stuchai_voice_os
+    profiles:
+      - cache
+
+  # Backend API Server
+  api:
+    build:
+      context: ./server
+      dockerfile: ../Dockerfile
+    container_name: stuchai_api
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+      - "8001:8001"  # WebSocket port
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-stuchai_voice_os}
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-me}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    env_file:
+      - .env
+    volumes:
+      - ./server:/app/server
+      - ./shared:/app/shared
+      - voice_datasets:/app/voice_datasets
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - stuchai_network
+    restart: unless-stopped
+
+  # Frontend Admin Dashboard
+  frontend:
+    build:
+      context: ./client-admin
+      dockerfile: Dockerfile
+    container_name: stuchai_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8001
+    env_file:
+      - .env
+    volumes:
+      - ./client-admin:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - api
+    networks:
+      - stuchai_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  voice_datasets:
+
+networks:
+  stuchai_network:
+    driver: bridge
+

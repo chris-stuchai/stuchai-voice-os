@@ -1,0 +1,32 @@
+{
+  "name": "stuchai-voice-os",
+  "version": "1.0.0",
+  "description": "Voice Operating System for AI-driven property management + automation",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "cd server && python main.py",
+    "dev:client": "cd client-admin && npm run dev",
+    "build": "npm run build:client",
+    "build:client": "cd client-admin && npm run build",
+    "start": "npm run start:server",
+    "start:server": "cd server && uvicorn main:app --host 0.0.0.0 --port 8000"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/stuchai-voice-os.git"
+  },
+  "keywords": [
+    "voice-ai",
+    "property-management",
+    "automation",
+    "llm",
+    "tts",
+    "asr"
+  ],
+  "author": "",
+  "license": "MIT"
+}
+
