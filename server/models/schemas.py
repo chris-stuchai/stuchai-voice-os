@@ -226,7 +226,7 @@ class Message(Base):
     audio_path = Column(String(500), nullable=True)
     
     # Metadata
-    metadata = Column(JSON, default=dict)
+    message_metadata = Column(JSON, default=dict)
     tokens_used = Column(Integer, default=0)
     
     # Relationships
