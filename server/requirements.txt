@@ -22,7 +22,7 @@ pydantic==2.10.0
 pydantic-settings==2.7.0
 
 # Voice Pipeline
-pipecat-ai==0.0.13
+pipecat-ai==0.0.47
 openai-whisper==20231117
 TTS==0.22.0
 
